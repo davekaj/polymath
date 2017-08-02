@@ -12,12 +12,12 @@ import "github.com/oraclize/ethereum-api/oraclizeAPI.sol";
 contract KYCPolyMath is usingOraclize {
     
     
-    modifier noEther {if (msg.value > 0) throw; _; }
-    modifier onlyOwner {if (msg.sender != owner) throw; _; }
-    modifier onlyOraclize {if (msg.sender != oraclize_cbAddress()) throw; _; }
-	modifier onlyInState (uint _entryID, stateOfEntry _state) {
-		entryInformation instance = entries[_entryID];
-		if (instance.state != _state) throw;
+    modifier noEther {if (msg.value > 0) revert(); _; }
+    modifier onlyOwner {if (msg.sender != owner) revert(); _; }
+    modifier onlyOraclize {if (msg.sender != oraclize_cbAddress()) revert(); _; }
+	modifier onlyInState (uint _userID, stateOfKYC _state) {
+		userKYCInformation memory instance = userKYCInfoArray[_userID];
+		if (instance.state != _state) revert();
 		_;
 	}
     
@@ -30,19 +30,21 @@ contract KYCPolyMath is usingOraclize {
     04 unkown = the oracle returned and could not figure figure out if the KYC is approved
     05 invalid = something went wrong with the oracle, either bad data, or oracle failure
     */
-    enum stateOfKYC {Initiated, Applied, Approved, Rejected, Unknown, Invalid }; //00 01 02 03 04 05
+    enum stateOfKYC {Initiated, Applied, Approved, Rejected, Unknown, Invalid } //00 01 02 03 04 05
 
     //this itself should just be address and true or ANYTHING ELSE THAT IS FALSE. will add later 
     
 
-    event newOraclizeQuery(string description);
-    event newKYCResults(string KYCResult);
-    event LOG_OraclizeCall(uint userID, uint queryID, string oraclizeURL);
-    event LOG_OraclizeCallback(uint userID, bytes _queryID, string result); //bytes _proof if wanted
+    event LOG_OraclizeQuery(string description);
+    event LOG_KYC_Results(string KYCResult, address userEthAddress, string firstName, string lastName);
+    event LOG_OraclizeCall(uint userID, bytes32 queryID, string oraclizeURL);
+    event LOG_OraclizeCallback(uint userID, bytes32 queryID, string result); //bytes _proof if wanted
     
     address public owner;
     uint constant oraclizeGas = 500000;
-    uint constant temporaryURLToReplaceKYC = ["json(https://polymath-network.herokuapp.com/kyc).valid","{"name": "testing"}"];
+    string constant temporaryURLToReplaceKYC = "json(https://polymath-network.herokuapp.com/kyc).valid";
+    string constant temporaryURLPostBody = '{"name": "testing"}';
+    //***** MIGHT NEED ARRAY ^ around quotes 
     
     
     
@@ -51,16 +53,16 @@ contract KYCPolyMath is usingOraclize {
 
     mapping (address => bool) public KYCVerification; //quick lookup reference if an address has been approved
     mapping  (address => uint) public KYC_ID; // a lookup to help grab the user info when needed
-    mappipng (bytes32 => oraclizeCallback) public oraclizeCallbacks; //this is needed in order to relate the query ID back to the user ID 
+    mapping (bytes32 => oraclizeCallback) public oraclizeCallbacks; //this is needed in order to relate the query ID back to the user ID 
     
-    //mapping(bytes32 => oraclizeCallback) public oraclizeCallbacks;
+
 
 
     struct userKYCInformation{
         //unique public addresss of entry
         address ethereumPubKey;
         bool kycApproved;
-        stateOfRequest state;
+        stateOfKYC state;
         string firstName;
         string lastName;
         string dateOfBirth;
@@ -100,15 +102,15 @@ contract KYCPolyMath is usingOraclize {
     
     
     //either this has to be payable or verifyKYC does, for the oraczlie query. or the contract needs ether 
-    function applyForKYC (address _ethPubKey, string _first, string _last, string _birthDate, string _citizenship) payable {
-        uint userID = userKYCInfoArray.legnth++; 
+    function applyForKYC (string _first, string _last, string _birthDate, string _citizenship) payable {
+        uint userID = userKYCInfoArray.length++; 
         
         KYC_ID[msg.sender] = userID; //
-        KYCVerifiation[msg.sender] = false; //start off the person as false for approval for lookup
-        userKYCInformation instance = userKYCInfoArray[userID]; //filling in the dynamic array evertime a new person tries to get KYC
+        KYCVerification[msg.sender] = false; //start off the person as false for approval for lookup
+        userKYCInformation memory instance = userKYCInfoArray[userID]; //filling in the dynamic array evertime a new person tries to get KYC
         
         
-        instance.ethereumPubKey = msg.sender
+        instance.ethereumPubKey = msg.sender;
         instance.kycApproved = false;
         instance.state = stateOfKYC.Initiated;
         instance.firstName = _first;
@@ -116,6 +118,7 @@ contract KYCPolyMath is usingOraclize {
         instance.dateOfBirth = _birthDate;
         instance.citizenship = _citizenship;
         
+        userKYCInfoArray[userID] = instance;
         
         //parseStringForOraclize();
         //will pass temp string for now
@@ -130,15 +133,17 @@ contract KYCPolyMath is usingOraclize {
        return parsedString
     }*/
     
-    function verifyKYC (string _parsedURLData, uint userID) payable internal returns (bool){
-        newOraclizeQuery("Oraclize query was sent, standing by for the answer..");
-        bytes32 queryID = oraclize_query("URL", _parsedURLData); //this is done in order to save the queryID, and link it back to userID
+    function verifyKYC (string _parsedURLData, uint userID) payable returns (bool){
+        LOG_OraclizeQuery("Oraclize query was sent, standing by for the answer..");
+        bytes32 queryID = oraclize_query("URL", _parsedURLData, temporaryURLPostBody); //this is done in order to save the queryID, and link it back to userID
         
         oraclizeCallbacks[queryID] = oraclizeCallback(userID);
         
         LOG_OraclizeCall(userID, queryID, _parsedURLData);
     }
     
+    
+    /*
     function updateKYC (string _oracleResult) internal {
         userKYCInformation instance = 
         
@@ -148,39 +153,43 @@ contract KYCPolyMath is usingOraclize {
         
         address user = //get from KYC_ID and dyn array
         
-        KYCVerification[user] = _oracleResult
+        KYCVerification[user] = _oracleResult;
         
-    }
+    }*/
 
 
     function __callback(bytes32 _queryID, string result) onlyOraclize {
-        oraclizeCallback memory instance = oraclizeCallbacks[_queryID]
+        oraclizeCallback memory instance = oraclizeCallbacks[_queryID];
         
         uint userID = instance.userID;
         
-        if (result = "true") 
+        if (sha3(result) == sha3("true")) 
             userKYCInfoArray[userID].kycApproved = true;
-            KYCVerification[userKYCInfoArray[userID].ethereumPubKey] = true
+            KYCVerification[userKYCInfoArray[userID].ethereumPubKey] = true;
             
             
-        if (result = "false")
+        if (sha3(result) == sha3("false"))
             userKYCInfoArray[userID].kycApproved = false;
-            KYCVerification[userKYCInfoArray[userID].ethereumPubKey] = false
+            KYCVerification[userKYCInfoArray[userID].ethereumPubKey] = false;
+            
+            
+            
+        //we would have some KYC state here if wanted
 
-        newKYCResults(result);
+        LOG_KYC_Results(result, userKYCInfoArray[userID].ethereumPubKey, userKYCInfoArray[userID].firstName, userKYCInfoArray[userID].lastName);
         
-        
+        //chek mapping
         
         
 
     }
     
-    function verifyFromOutside external () {
+    function verifyFromOutside  () external {
         //this function will just look at the mapping and return true or false. easy call after
         //it actually gets approved and you dont want to run through everything again 
     }
     
-    function {}
+    function () {}
     
 }
 
