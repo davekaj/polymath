@@ -1,8 +1,8 @@
-var ConvertLib = artifacts.require("./ConvertLib.sol");
-var MetaCoin = artifacts.require("./MetaCoin.sol");
+var usingOraclize = artifacts.require("./usingOraclize.sol");
+var KYCPolyMath = artifacts.require("./KYCPolyMath.sol");
 
 module.exports = function(deployer) {
-  deployer.deploy(ConvertLib);
-  deployer.link(ConvertLib, MetaCoin);
-  deployer.deploy(MetaCoin);
+  deployer.deploy(usingOraclize);
+  deployer.link(usingOraclize, KYCPolyMath);
+  deployer.deploy(KYCPolyMath);
 };
